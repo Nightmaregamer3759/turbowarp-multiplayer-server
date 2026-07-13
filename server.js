@@ -25,11 +25,10 @@ function send(ws, message) {
     }
 }
 
-function enviarParaSala(room, message, excluir = null) {
+// Envia para todos da sala (incluindo quem enviou)
+function enviarParaSala(room, message) {
     for (const player of room.players) {
-        if (player !== excluir) {
-            send(player, message);
-        }
+        send(player, message);
     }
 }
 
@@ -45,7 +44,7 @@ function leaveRoom(ws) {
 
     enviarParaSala(
         room,
-        `PLAYER_LEFT/${ws.playerId}`
+        `PLAYER_LEFT|${ws.playerId}`
     );
 
     if (room.players.size === 0) {
@@ -68,7 +67,7 @@ wss.on("connection", (ws) => {
 
     send(
         ws,
-        `CONNECTED/${ws.playerId}`
+        `CONNECTED|${ws.playerId}`
     );
 
 
@@ -76,12 +75,12 @@ wss.on("connection", (ws) => {
 
         const message = data.toString();
 
-        const parts = message.split("/");
+        const parts = message.split("|");
 
         const command = parts[0];
 
 
-        // CRIAR/NomeDaSala/Senha/MaxJogadores
+        // CRIAR|NomeDaSala|Senha|MaxJogadores
         if (command === "CRIAR") {
 
             const roomName = parts[1];
@@ -90,13 +89,13 @@ wss.on("connection", (ws) => {
 
 
             if (!roomName || !password) {
-                send(ws, "ERROR/DADOS_INVALIDOS");
+                send(ws, "ERROR|DADOS_INVALIDOS");
                 return;
             }
 
 
             if (rooms.has(roomName)) {
-                send(ws, "ERROR/SALA_JA_EXISTE");
+                send(ws, "ERROR|SALA_JA_EXISTE");
                 return;
             }
 
@@ -126,26 +125,23 @@ wss.on("connection", (ws) => {
 
             send(
                 ws,
-                `ROOM_CREATED/${roomName}/${ws.playerId}`
+                `ROOM_CREATED|${roomName}|${ws.playerId}`
             );
 
 
             console.log(
                 `Sala criada: ${roomName}`
             );
-
         }
 
 
 
-        // ENTRAR/NomeDaSala/Senha
+        // ENTRAR|NomeDaSala|Senha
         else if (command === "ENTRAR") {
-
 
             const roomName = parts[1];
 
             const password = parts[2];
-
 
             const room = rooms.get(roomName);
 
@@ -154,7 +150,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR/SALA_NAO_EXISTE"
+                    "ERROR|SALA_NAO_EXISTE"
                 );
 
                 return;
@@ -165,7 +161,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR/SENHA_INCORRETA"
+                    "ERROR|SENHA_INCORRETA"
                 );
 
                 return;
@@ -176,7 +172,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR/SALA_CHEIA"
+                    "ERROR|SALA_CHEIA"
                 );
 
                 return;
@@ -193,29 +189,27 @@ wss.on("connection", (ws) => {
 
             send(
                 ws,
-                `ROOM_JOINED/${roomName}/${ws.playerId}`
+                `ROOM_JOINED|${roomName}|${ws.playerId}`
             );
 
 
             enviarParaSala(
                 room,
-                `PLAYER_JOINED/${ws.playerId}`,
-                ws
+                `PLAYER_JOINED|${ws.playerId}`
             );
 
         }
 
 
 
-        // MSG/qualquer coisa
+        // MSG|qualquer informação do jogo
         else if (command === "MSG") {
-
 
             if (!ws.roomName) {
 
                 send(
                     ws,
-                    "ERROR/SEM_SALA"
+                    "ERROR|SEM_SALA"
                 );
 
                 return;
@@ -233,8 +227,7 @@ wss.on("connection", (ws) => {
 
             enviarParaSala(
                 room,
-                `MSG/${ws.playerId}/${gameMessage}`,
-                ws
+                `MSG|${ws.playerId}|${gameMessage}`
             );
 
         }
