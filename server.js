@@ -45,10 +45,9 @@ function leaveRoom(ws) {
 
     enviarParaSala(
         room,
-        `PLAYER_LEFT|${ws.playerId}`
+        `PLAYER_LEFT/${ws.playerId}`
     );
 
-    // Se não tem ninguém, remove a sala
     if (room.players.size === 0) {
         rooms.delete(ws.roomName);
         console.log(`Sala removida: ${ws.roomName}`);
@@ -69,19 +68,20 @@ wss.on("connection", (ws) => {
 
     send(
         ws,
-        `CONNECTED|${ws.playerId}`
+        `CONNECTED/${ws.playerId}`
     );
 
 
     ws.on("message", (data) => {
 
         const message = data.toString();
-        const parts = message.split("|");
+
+        const parts = message.split("/");
 
         const command = parts[0];
 
 
-        // CRIAR|NomeDaSala|Senha|MaxJogadores
+        // CRIAR/NomeDaSala/Senha/MaxJogadores
         if (command === "CRIAR") {
 
             const roomName = parts[1];
@@ -90,13 +90,13 @@ wss.on("connection", (ws) => {
 
 
             if (!roomName || !password) {
-                send(ws, "ERROR|DADOS_INVALIDOS");
+                send(ws, "ERROR/DADOS_INVALIDOS");
                 return;
             }
 
 
             if (rooms.has(roomName)) {
-                send(ws, "ERROR|SALA_JA_EXISTE");
+                send(ws, "ERROR/SALA_JA_EXISTE");
                 return;
             }
 
@@ -126,22 +126,24 @@ wss.on("connection", (ws) => {
 
             send(
                 ws,
-                `ROOM_CREATED|${roomName}|${ws.playerId}`
+                `ROOM_CREATED/${roomName}/${ws.playerId}`
             );
 
 
             console.log(
                 `Sala criada: ${roomName}`
             );
+
         }
 
 
 
-        // ENTRAR|NomeDaSala|Senha
+        // ENTRAR/NomeDaSala/Senha
         else if (command === "ENTRAR") {
 
 
             const roomName = parts[1];
+
             const password = parts[2];
 
 
@@ -152,7 +154,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR|SALA_NAO_EXISTE"
+                    "ERROR/SALA_NAO_EXISTE"
                 );
 
                 return;
@@ -163,7 +165,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR|SENHA_INCORRETA"
+                    "ERROR/SENHA_INCORRETA"
                 );
 
                 return;
@@ -174,7 +176,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR|SALA_CHEIA"
+                    "ERROR/SALA_CHEIA"
                 );
 
                 return;
@@ -191,13 +193,13 @@ wss.on("connection", (ws) => {
 
             send(
                 ws,
-                `ROOM_JOINED|${roomName}|${ws.playerId}`
+                `ROOM_JOINED/${roomName}/${ws.playerId}`
             );
 
 
             enviarParaSala(
                 room,
-                `PLAYER_JOINED|${ws.playerId}`,
+                `PLAYER_JOINED/${ws.playerId}`,
                 ws
             );
 
@@ -205,7 +207,7 @@ wss.on("connection", (ws) => {
 
 
 
-        // MSG|qualquer coisa
+        // MSG/qualquer coisa
         else if (command === "MSG") {
 
 
@@ -213,7 +215,7 @@ wss.on("connection", (ws) => {
 
                 send(
                     ws,
-                    "ERROR|SEM_SALA"
+                    "ERROR/SEM_SALA"
                 );
 
                 return;
@@ -231,7 +233,7 @@ wss.on("connection", (ws) => {
 
             enviarParaSala(
                 room,
-                `MSG|${ws.playerId}|${gameMessage}`,
+                `MSG/${ws.playerId}/${gameMessage}`,
                 ws
             );
 
@@ -241,7 +243,6 @@ wss.on("connection", (ws) => {
 
         // SAIR
         else if (command === "SAIR") {
-
 
             leaveRoom(ws);
 
@@ -266,9 +267,7 @@ wss.on("connection", (ws) => {
 
     });
 
-
 });
-
 
 
 server.listen(PORT, () => {
