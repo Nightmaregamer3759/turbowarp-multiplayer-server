@@ -77,6 +77,27 @@ function enviarPings(room) {
 }
 
 
+
+// ==============================
+// ENVIAR QUANTIDADE DE PLAYERS
+// ==============================
+
+function enviarQuantidadePlayers(room) {
+
+    const quantidade = room.players.size;
+
+    for (const player of room.players) {
+
+        send(
+            player,
+            `PLAYER_COUNT|${player.playerId}|${quantidade}|${room.maxPlayers}`
+        );
+
+    }
+
+}
+
+
 // ==============================
 // SAIR DA SALA
 // ==============================
@@ -117,6 +138,7 @@ function leaveRoom(ws) {
 
         // Atualiza lista de pings
         enviarPings(room);
+        enviarQuantidadePlayers(room);
 
     }
 
@@ -253,7 +275,7 @@ wss.on("connection", (ws) => {
             const password = parts[2];
 
             const maxPlayers =
-                Number(parts[3]) || 2;
+                Math.max(2, Math.min(Number(parts[3]) || 2, 4));
 
 
             if (!roomName || !password) {
@@ -315,6 +337,7 @@ wss.on("connection", (ws) => {
 
             // Envia os pings atuais
             enviarPings(room);
+            enviarQuantidadePlayers(room);
 
 
             console.log(
@@ -405,6 +428,7 @@ wss.on("connection", (ws) => {
 
             // Todos recebem os pings
             enviarPings(room);
+            enviarQuantidadePlayers(room);
 
         }
 
