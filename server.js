@@ -491,6 +491,39 @@ wss.on("connection", (ws) => {
 
         }
 
+        // ==============================
+        // CHAT
+        //
+        // Qualquer mensagem que não seja
+        // um comando do servidor será
+        // enviada diretamente aos outros
+        // jogadores da sala.
+        // ==============================
+
+        else {
+
+            if (!ws.roomName) {
+                send(
+                    ws,
+                    "ERROR|SEM_SALA"
+                );
+
+                return;
+            }
+
+            const room =
+                rooms.get(ws.roomName);
+
+            if (!room) return;
+
+            enviarParaSala(
+                room,
+                message,
+                ws
+            );
+
+        }
+
     });
 
 
