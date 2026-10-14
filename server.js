@@ -1,560 +1,228 @@
-const WebSocket = require("ws");
-const http = require("http");
+const WebSocket = require(“ws”); const http = require(“http”);
 
 const PORT = process.env.PORT || 3000;
 
-// Servidor HTTP
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Servidor Multiplayer Online!");
-});
+// Servidor HTTP const server = http.createServer((req, res) => {
+res.writeHead(200, { “Content-Type”: “text/plain” }); res.end(“Servidor
+Multiplayer Online!”); });
 
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server }); const rooms = new Map();
 
-// Salas
-const rooms = new Map();
+function gerarID() { return Math.random().toString(36).substring(2,
+8).toUpperCase(); }
 
+function send(ws, message) { if (ws.readyState === WebSocket.OPEN)
+ws.send(message); }
 
-// ==============================
-// GERAR ID
-// ==============================
+function enviarParaSala(room, message, excluir = null) { for (const
+player of room.players) { if (player !== excluir) send(player, message);
+} }
 
-function gerarID() {
-    return Math.random()
-        .toString(36)
-        .substring(2, 8)
-        .toUpperCase();
-}
+function atribuirSlot(room, ws) { const usados = new Set(); for (const
+player of room.players) { if (player !== ws &&
+Number.isInteger(player.slot)) usados.add(player.slot); }
 
-
-// ==============================
-// ENVIAR MENSAGEM
-// ==============================
-
-function send(ws, message) {
-
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(message);
-    }
-
-}
-
-
-// ==============================
-// ENVIAR PARA SALA
-// ==============================
-
-function enviarParaSala(room, message, excluir = null) {
-
-    for (const player of room.players) {
-
-        if (player !== excluir) {
-            send(player, message);
+    for (let slot = 1; slot <= room.maxPlayers; slot++) {
+        if (!usados.has(slot)) {
+            ws.slot = slot;
+            return slot;
         }
-
     }
+
+    return null;
 
 }
 
+function enviarSlots(room) { // Envia a cada cliente o mapa atual de IDs
+e posições P1-P4. for (const player of room.players) { send(player,
+MY_SLOT|${player.slot || 0}); for (const member of room.players) {
+send(player, PLAYER_SLOT|${member.playerId}|${member.slot || 0}); } } }
 
-// ==============================
-// ENVIAR LISTA DE PINGS
-// ==============================
+function enviarPings(room) { let mensagem = “PINGS”; for (const player
+of room.players) { mensagem += |${player.playerId}|${player.ping}; }
+enviarParaSala(room, mensagem); }
 
-function enviarPings(room) {
+function enviarQuantidadePlayers(room) { const quantidade =
+room.players.size; for (const player of room.players) { send(player,
+PLAYER_COUNT|${player.playerId}|${quantidade}|${room.maxPlayers}); } }
 
-    let mensagem = "PINGS";
+function leaveRoom(ws) { if (!ws.roomName) return;
 
-    for (const player of room.players) {
-
-        mensagem +=
-            `|${player.playerId}|${player.ping}`;
-
-    }
-
-    enviarParaSala(room, mensagem);
-
-}
-
-
-
-// ==============================
-// ENVIAR QUANTIDADE DE PLAYERS
-// ==============================
-
-function enviarQuantidadePlayers(room) {
-
-    const quantidade = room.players.size;
-
-    for (const player of room.players) {
-
-        send(
-            player,
-            `PLAYER_COUNT|${player.playerId}|${quantidade}|${room.maxPlayers}`
-        );
-
-    }
-
-}
-
-
-// ==============================
-// SAIR DA SALA
-// ==============================
-
-function leaveRoom(ws) {
-
-    if (!ws.roomName) return;
-
-    const room = rooms.get(ws.roomName);
+    const roomName = ws.roomName;
+    const room = rooms.get(roomName);
 
     if (!room) {
         ws.roomName = null;
+        ws.slot = null;
         return;
     }
 
-    const roomName = ws.roomName;
-
     room.players.delete(ws);
 
+    // Libera o slot para que o próximo jogador possa reutilizá-lo.
+    ws.slot = null;
+    ws.roomName = null;
 
-    // Avisa os jogadores restantes
-    enviarParaSala(
-        room,
-        `PLAYER_LEFT|${ws.playerId}`
-    );
+    enviarParaSala(room, `PLAYER_LEFT|${ws.playerId}`);
 
-
-    // Remove a sala se estiver vazia
     if (room.players.size === 0) {
-
         rooms.delete(roomName);
-
-        console.log(
-            `Sala removida: ${roomName}`
-        );
-
+        console.log(`Sala removida: ${roomName}`);
     } else {
-
-        // Atualiza lista de pings
         enviarPings(room);
         enviarQuantidadePlayers(room);
-
+        enviarSlots(room);
     }
-
-
-    ws.roomName = null;
 
 }
 
+wss.on(“connection”, (ws) => { ws.playerId = gerarID(); ws.roomName =
+null; ws.slot = null; ws.ping = 0;
 
-// ==============================
-// NOVA CONEXÃO
-// ==============================
-
-wss.on("connection", (ws) => {
-
-    ws.playerId = gerarID();
-
-    ws.roomName = null;
-
-    ws.ping = 0;
-
-
-    console.log(
-        `Jogador conectado: ${ws.playerId}`
-    );
-
-
-    send(
-        ws,
-        `CONNECTED|${ws.playerId}`
-    );
-
-
-
-    // ==============================
-    // RECEBER MENSAGEM
-    // ==============================
+    console.log(`Jogador conectado: ${ws.playerId}`);
+    send(ws, `CONNECTED|${ws.playerId}`);
 
     ws.on("message", (data) => {
-
         const message = data.toString();
-
         const parts = message.split("|");
-
         const command = parts[0];
 
-
-
-        // ==============================
-        // PING
-        //
-        // Cliente:
-        // PING|123
-        //
-        // Servidor:
-        // PONG|123
-        // ==============================
-
         if (command === "PING") {
-
-            const valor = parts[1] || "";
-
-            send(
-                ws,
-                `PONG|${valor}`
-            );
-
+            send(ws, `PONG|${parts[1] || ""}`);
         }
-
-
-
-        // ==============================
-        // INFORMAR PING
-        //
-        // SET_PING|85
-        // ==============================
 
         else if (command === "SET_PING") {
-
             let ping = Number(parts[1]);
-
-
-            if (!Number.isFinite(ping)) {
-                return;
-            }
-
-
-            // Evita valores estranhos
-            ping = Math.max(
-                0,
-                Math.min(
-                    Math.round(ping),
-                    9999
-                )
-            );
-
-
+            if (!Number.isFinite(ping)) return;
+            ping = Math.max(0, Math.min(Math.round(ping), 9999));
             ws.ping = ping;
 
-
-            // Se estiver em uma sala
             if (ws.roomName) {
-
-                const room =
-                    rooms.get(ws.roomName);
-
-
-                if (room) {
-
-                    // Envia para TODOS da sala
-                    enviarParaSala(
-                        room,
-                        `PLAYER_PING|${ws.playerId}|${ws.ping}`
-                    );
-
-                }
-
+                const room = rooms.get(ws.roomName);
+                if (room) enviarParaSala(room, `PLAYER_PING|${ws.playerId}|${ws.ping}`);
             }
-
         }
-
-
-
-        // ==============================
-        // CRIAR SALA
-        //
-        // CRIAR|Nome|Senha|MaxJogadores
-        // ==============================
 
         else if (command === "CRIAR") {
-
             const roomName = parts[1];
-
             const password = parts[2];
-
-            const maxPlayers =
-                Math.max(2, Math.min(Number(parts[3]) || 2, 4));
-
+            const maxPlayers = Math.max(2, Math.min(Number(parts[3]) || 2, 4));
 
             if (!roomName || !password) {
-
-                send(
-                    ws,
-                    "ERROR|DADOS_INVALIDOS"
-                );
-
+                send(ws, "ERROR|DADOS_INVALIDOS");
                 return;
-
             }
-
 
             if (rooms.has(roomName)) {
-
-                send(
-                    ws,
-                    "ERROR|SALA_JA_EXISTE"
-                );
-
+                send(ws, "ERROR|SALA_JA_EXISTE");
                 return;
-
             }
 
-
             leaveRoom(ws);
-
 
             const room = {
-
-                password: password,
-
-                maxPlayers: maxPlayers,
-
+                password,
+                maxPlayers,
                 hostId: ws.playerId,
-
                 players: new Set()
-
             };
 
-
-            room.players.add(ws);
-
-            rooms.set(
-                roomName,
-                room
-            );
-
-
+            ws.slot = 1; // Criador da sala é sempre P1.
             ws.roomName = roomName;
+            room.players.add(ws);
+            rooms.set(roomName, room);
 
-
-            send(
-                ws,
-                `ROOM_CREATED|${roomName}|${ws.playerId}`
-            );
-
-
-            // Envia os pings atuais
+            send(ws, `ROOM_CREATED|${roomName}|${ws.playerId}`);
             enviarPings(room);
             enviarQuantidadePlayers(room);
+            enviarSlots(room);
 
-
-            console.log(
-                `Sala criada: ${roomName}`
-            );
-
+            console.log(`Sala criada: ${roomName} (anfitrião ${ws.playerId}, P1)`);
         }
-
-
-
-        // ==============================
-        // ENTRAR NA SALA
-        //
-        // ENTRAR|Nome|Senha
-        // ==============================
 
         else if (command === "ENTRAR") {
-
             const roomName = parts[1];
-
             const password = parts[2];
-
-
-            const room =
-                rooms.get(roomName);
-
+            const room = rooms.get(roomName);
 
             if (!room) {
-
-                send(
-                    ws,
-                    "ERROR|SALA_NAO_EXISTE"
-                );
-
+                send(ws, "ERROR|SALA_NAO_EXISTE");
                 return;
-
             }
-
 
             if (room.password !== password) {
-
-                send(
-                    ws,
-                    "ERROR|SENHA_INCORRETA"
-                );
-
+                send(ws, "ERROR|SENHA_INCORRETA");
                 return;
-
             }
 
-
-            if (
-                room.players.size >=
-                room.maxPlayers
-            ) {
-
-                send(
-                    ws,
-                    "ERROR|SALA_CHEIA"
-                );
-
+            // Se o cliente já estiver nesta sala, não o adicione de novo.
+            if (ws.roomName === roomName) {
+                enviarSlots(room);
                 return;
-
             }
 
+            if (room.players.size >= room.maxPlayers) {
+                send(ws, "ERROR|SALA_CHEIA");
+                return;
+            }
 
             leaveRoom(ws);
 
+            const slot = atribuirSlot(room, ws);
+            if (!slot) {
+                send(ws, "ERROR|SALA_CHEIA");
+                return;
+            }
 
             room.players.add(ws);
-
             ws.roomName = roomName;
 
+            send(ws, `ROOM_JOINED|${roomName}|${ws.playerId}`);
+            enviarParaSala(room, `PLAYER_JOINED|${ws.playerId}`, ws);
 
-            send(
-                ws,
-                `ROOM_JOINED|${roomName}|${ws.playerId}`
-            );
-
-
-            // Avisa apenas os outros
-            enviarParaSala(
-                room,
-                `PLAYER_JOINED|${ws.playerId}`,
-                ws
-            );
-
-
-            // Todos recebem os pings
             enviarPings(room);
             enviarQuantidadePlayers(room);
-
+            enviarSlots(room);
         }
-
-
-
-        // ==============================
-        // MENSAGEM DO JOGO
-        //
-        // MSG|qualquer coisa
-        // ==============================
 
         else if (command === "MSG") {
-
             if (!ws.roomName) {
-
-                send(
-                    ws,
-                    "ERROR|SEM_SALA"
-                );
-
+                send(ws, "ERROR|SEM_SALA");
                 return;
-
             }
 
-
-            const room =
-                rooms.get(ws.roomName);
-
-
+            const room = rooms.get(ws.roomName);
             if (!room) return;
 
-
-            const gameMessage =
-                message.substring(4);
-
-
-            // Envia apenas para os OUTROS
-            enviarParaSala(
-                room,
-                `MSG|${ws.playerId}|${gameMessage}`,
-                ws
-            );
-
+            const gameMessage = message.substring(4);
+            // Mantém o protocolo existente: retransmite aos outros jogadores.
+            enviarParaSala(room, `MSG|${ws.playerId}|${gameMessage}`, ws);
         }
-
-
-
-        // ==============================
-        // SAIR
-        // ==============================
 
         else if (command === "SAIR") {
-
             leaveRoom(ws);
-
-            send(
-                ws,
-                "LEFT_ROOM"
-            );
-
+            send(ws, "LEFT_ROOM");
         }
 
-        // ==============================
-        // CHAT
-        //
-        // Qualquer mensagem que não seja
-        // um comando do servidor será
-        // enviada diretamente aos outros
-        // jogadores da sala.
-        // ==============================
-
         else {
-
             if (!ws.roomName) {
-                send(
-                    ws,
-                    "ERROR|SEM_SALA"
-                );
-
+                send(ws, "ERROR|SEM_SALA");
                 return;
             }
 
-            const room =
-                rooms.get(ws.roomName);
-
+            const room = rooms.get(ws.roomName);
             if (!room) return;
 
-            enviarParaSala(
-                room,
-                message,
-                ws
-            );
-
+            enviarParaSala(room, message, ws);
         }
-
     });
-
-
-
-    // ==============================
-    // DESCONECTOU
-    // ==============================
 
     ws.on("close", () => {
-
-        console.log(
-            `Jogador desconectado: ${ws.playerId}`
-        );
-
-
+        console.log(`Jogador desconectado: ${ws.playerId}`);
         leaveRoom(ws);
-
     });
 
 });
 
-
-
-// ==============================
-// INICIAR SERVIDOR
-// ==============================
-
 server.listen(PORT, () => {
-
-    console.log(
-        `Servidor rodando na porta ${PORT}`
-    );
-
-});
+console.log(Servidor rodando na porta ${PORT}); });
